@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
 import { createL402Client } from '../src/client';
 import type { LndConfig } from '../src/types';
@@ -58,8 +58,18 @@ function makeLndPaymentResponse() {
 // --- Tests ---
 
 describe('createL402Client', () => {
+  const savedTlsEnv = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    if (savedTlsEnv === undefined) {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    } else {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = savedTlsEnv;
+    }
   });
 
   describe('non-402 responses', () => {
@@ -321,6 +331,33 @@ describe('createL402Client', () => {
       expect(call[1]?.method).toBe('POST');
       expect((call[1]?.headers as any)['X-Custom']).toBe('value');
       expect(call[1]?.body).toBe('{"data":1}');
+    });
+  });
+
+  describe('TLS scoping', () => {
+    it('does not set NODE_TLS_REJECT_UNAUTHORIZED globally on construction', () => {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
+      createL402Client({ node: { ...node, skipTlsVerify: true } });
+
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+    });
+
+    it('restores NODE_TLS_REJECT_UNAUTHORIZED after LND payment call', async () => {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(make402Response())
+        .mockResolvedValueOnce(makeLndPaymentResponse())
+        .mockResolvedValueOnce(make200Response());
+
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = createL402Client({ node: { ...node, skipTlsVerify: true } });
+      await client.fetch('https://api.example.com/test');
+
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
     });
   });
 });

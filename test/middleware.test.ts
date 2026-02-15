@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
 import { l402 } from '../src/middleware';
 import type { LndConfig } from '../src/types';
@@ -59,8 +59,19 @@ function mockRes() {
 // --- Tests ---
 
 describe('l402 middleware', () => {
+  const savedTlsEnv = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    // Restore TLS env to its original state after each test
+    if (savedTlsEnv === undefined) {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    } else {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = savedTlsEnv;
+    }
   });
 
   describe('402 challenge (no auth header)', () => {
@@ -294,6 +305,100 @@ describe('l402 middleware', () => {
       const res = mockRes();
 
       await middleware(req, res, vi.fn());
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.error).toBe('Payment gateway error');
+    });
+  });
+
+  describe('TLS scoping', () => {
+    it('does not set NODE_TLS_REJECT_UNAUTHORIZED globally on construction', () => {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
+      l402({ node: { ...node, skipTlsVerify: true }, price: 100 });
+
+      // The env var should NOT have been set at construction time
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+    });
+
+    it('restores NODE_TLS_REJECT_UNAUTHORIZED after LND call with skipTlsVerify', async () => {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              r_hash: PAYMENT_HASH_B64,
+              payment_request: 'lnbc100n1test',
+              add_index: '1',
+            }),
+        })
+      );
+
+      const middleware = l402({ node: { ...node, skipTlsVerify: true }, price: 100 });
+      await middleware(mockReq(), mockRes(), vi.fn());
+
+      // After the call completes, the env var should be cleaned up
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+    });
+
+    it('does not touch NODE_TLS_REJECT_UNAUTHORIZED when skipTlsVerify is false', async () => {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              r_hash: PAYMENT_HASH_B64,
+              payment_request: 'lnbc100n1test',
+              add_index: '1',
+            }),
+        })
+      );
+
+      const middleware = l402({ node, price: 100 });
+      await middleware(mockReq(), mockRes(), vi.fn());
+
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+    });
+  });
+
+  describe('price validation', () => {
+    it('returns 500 for price of 0', async () => {
+      const middleware = l402({ node, price: 0 });
+      const res = mockRes();
+      await middleware(mockReq(), res, vi.fn());
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.error).toBe('Payment gateway error');
+    });
+
+    it('returns 500 for negative price', async () => {
+      const middleware = l402({ node, price: -10 });
+      const res = mockRes();
+      await middleware(mockReq(), res, vi.fn());
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.error).toBe('Payment gateway error');
+    });
+
+    it('returns 500 for NaN price from priceFn', async () => {
+      const middleware = l402({ node, price: 100, priceFn: () => NaN });
+      const res = mockRes();
+      await middleware(mockReq(), res, vi.fn());
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.error).toBe('Payment gateway error');
+    });
+
+    it('returns 500 for Infinity price from priceFn', async () => {
+      const middleware = l402({ node, price: 100, priceFn: () => Infinity });
+      const res = mockRes();
+      await middleware(mockReq(), res, vi.fn());
 
       expect(res.statusCode).toBe(500);
       expect(res.body.error).toBe('Payment gateway error');

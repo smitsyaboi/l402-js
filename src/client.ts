@@ -9,6 +9,7 @@
 //   // That's it. If the server returns 402, the client pays and retries.
 
 import { L402ClientConfig, L402Challenge, LndPaymentResponse } from './types';
+import { lndFetch } from './lnd-fetch';
 
 interface L402FetchResult<T = any> {
   data: T;
@@ -24,16 +25,21 @@ interface L402FetchResult<T = any> {
 async function payInvoice(
   restHost: string,
   macaroon: string,
-  paymentRequest: string
+  paymentRequest: string,
+  skipTlsVerify?: boolean
 ): Promise<LndPaymentResponse> {
-  const res = await fetch(`${restHost}/v1/channels/transactions`, {
-    method: 'POST',
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-      'Content-Type': 'application/json',
+  const res = await lndFetch(
+    `${restHost}/v1/channels/transactions`,
+    {
+      method: 'POST',
+      headers: {
+        'Grpc-Metadata-macaroon': macaroon,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payment_request: paymentRequest }),
     },
-    body: JSON.stringify({ payment_request: paymentRequest }),
-  });
+    skipTlsVerify
+  );
 
   if (!res.ok) {
     throw new Error(`LND payment failed: ${res.status} ${res.statusText}`);
@@ -75,11 +81,6 @@ async function payInvoice(
  */
 export function createL402Client(config: L402ClientConfig) {
   const { node, maxAutoPaySats = 10000 } = config;
-
-  // Handle self-signed TLS certs in development
-  if (node.skipTlsVerify) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  }
 
   // Cache tokens: URL -> L402 authorization header
   // Reuse tokens for subsequent requests to the same endpoint
@@ -123,7 +124,8 @@ export function createL402Client(config: L402ClientConfig) {
     const payment = await payInvoice(
       node.restHost,
       node.macaroon,
-      challenge.invoice
+      challenge.invoice,
+      node.skipTlsVerify
     );
 
     if (payment.payment_error) {
