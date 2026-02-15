@@ -11,6 +11,7 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { L402MiddlewareConfig, LndInvoiceResponse } from './types';
+import { lndFetch } from './lnd-fetch';
 
 /**
  * Create a service macaroon that embeds the payment hash.
@@ -77,19 +78,24 @@ async function createInvoice(
   restHost: string,
   macaroon: string,
   amount: number,
-  memo: string
+  memo: string,
+  skipTlsVerify?: boolean
 ): Promise<LndInvoiceResponse> {
-  const res = await fetch(`${restHost}/v1/invoices`, {
-    method: 'POST',
-    headers: {
-      'Grpc-Metadata-macaroon': macaroon,
-      'Content-Type': 'application/json',
+  const res = await lndFetch(
+    `${restHost}/v1/invoices`,
+    {
+      method: 'POST',
+      headers: {
+        'Grpc-Metadata-macaroon': macaroon,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        value: amount.toString(),
+        memo,
+      }),
     },
-    body: JSON.stringify({
-      value: amount.toString(),
-      memo,
-    }),
-  });
+    skipTlsVerify
+  );
 
   if (!res.ok) {
     throw new Error(`LND invoice creation failed: ${res.status} ${res.statusText}`);
@@ -131,11 +137,6 @@ async function createInvoice(
 export function l402(config: L402MiddlewareConfig) {
   const { node, price, description, priceFn } = config;
 
-  // Handle self-signed TLS certs in development
-  if (node.skipTlsVerify) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  }
-
   return async (req: Request, res: Response, next: NextFunction) => {
     // --- Check for existing L402 authorization ---
     const authHeader = req.headers.authorization;
@@ -173,6 +174,12 @@ export function l402(config: L402MiddlewareConfig) {
     try {
       // Determine price (static or dynamic)
       const finalPrice = priceFn ? await priceFn(req) : price;
+
+      // Validate price before creating an invoice
+      if (!Number.isFinite(finalPrice) || finalPrice <= 0) {
+        throw new Error(`Invalid price: ${finalPrice}. Must be a positive number.`);
+      }
+
       const memo = description || `L402 access: ${req.method} ${req.path}`;
 
       // Create Lightning invoice
@@ -180,7 +187,8 @@ export function l402(config: L402MiddlewareConfig) {
         node.restHost,
         node.macaroon,
         finalPrice,
-        memo
+        memo,
+        node.skipTlsVerify
       );
 
       // Extract payment hash as hex
