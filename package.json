@@ -1,6 +1,6 @@
 {
   "name": "l402-js",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lightning L402 protocol for Express and Node.js — paywall any API with Bitcoin micropayments",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
