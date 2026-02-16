@@ -145,7 +145,7 @@ Returns `{ fetch, clearCache, cacheSize }`.
 
 ```bash
 # Clone and install
-git clone https://github.com/joshuatrees/l402-js
+git clone https://github.com/smitsyaboi/l402-js
 cd l402-js && npm install
 
 # Use Polar (https://lightningpolar.com) for local Lightning Network
