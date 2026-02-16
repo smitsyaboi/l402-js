@@ -1,6 +1,6 @@
 {
   "name": "l402-js",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Lightning L402 protocol for Express and Node.js — paywall any API with Bitcoin micropayments",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,10 +34,10 @@
   ],
   "author": "Joshua Trees",
   "license": "MIT",
-  "homepage": "https://github.com/joshuatrees/l402-js",
+  "homepage": "https://github.com/smitsyaboi/l402-js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/joshuatrees/l402-js"
+    "url": "https://github.com/smitsyaboi/l402-js"
   },
   "peerDependencies": {
     "express": ">=4.0.0"
