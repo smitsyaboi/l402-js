@@ -1,20 +1,24 @@
 {
   "name": "l402-js",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Lightning L402 protocol for Express and Node.js — paywall any API with Bitcoin micropayments",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "l402-proxy": "./dist/proxy-cli.js"
+  },
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/proxy-cli.js",
     "test": "vitest run",
     "prepublishOnly": "npm run build",
     "dev:server": "npx ts-node examples/server.ts",
-    "dev:client": "npx ts-node examples/client.ts"
+    "dev:client": "npx ts-node examples/client.ts",
+    "dev:proxy": "npx ts-node src/proxy-cli.ts"
   },
   "keywords": [
     "lightning",
@@ -39,13 +43,15 @@
     "type": "git",
     "url": "https://github.com/smitsyaboi/l402-js"
   },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
   "peerDependencies": {
     "express": ">=4.0.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",
-    "express": "^4.18.2",
     "typescript": "^5.3.0",
     "vitest": "^4.0.18"
   },
