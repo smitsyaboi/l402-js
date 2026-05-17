@@ -1,0 +1,40 @@
+[package]
+name        = "l402"
+version     = "0.1.0"
+edition     = "2021"
+description = "Lightning L402 protocol for Axum — paywall any API with Bitcoin micropayments"
+license     = "MIT"
+
+[[bin]]
+name = "l402-proxy"
+path = "src/bin/proxy_cli.rs"
+
+[dependencies]
+# Web framework + middleware (replaces express peer dep)
+axum  = "0.7"
+tower = { version = "0.4", features = ["util"] }
+
+# Async runtime (replaces Node.js event loop)
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for LND REST calls (replaces Node fetch + lnd-fetch.ts)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# JSON serialisation (replaces JSON.parse / JSON.stringify)
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Cryptography (replaces crypto.createHash('sha256'))
+sha2 = "0.10"
+
+# Encoding (replaces Buffer.from(...).toString('hex'/'base64'))
+hex    = "0.4"
+base64 = { version = "0.22", features = ["std"] }
+
+# Error handling
+thiserror = "1"
+
+[dev-dependencies]
+# Mock HTTP server for LND (replaces vitest vi.stubGlobal('fetch', ...))
+wiremock = "0.6"
+tokio    = { version = "1", features = ["full"] }
