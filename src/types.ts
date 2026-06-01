@@ -17,12 +17,23 @@ export interface LndConfig {
 }
 
 /**
+ * NWC (Nostr Wallet Connect) configuration.
+ * Use instead of LndConfig to connect via any NWC-compatible wallet.
+ */
+export interface NwcConfig {
+  /** nostr+walletconnect://<pubkey>?relay=<url>&secret=<hex> */
+  connectionString: string;
+}
+
+/**
  * Configuration for the L402 middleware.
- * Controls pricing and behavior per route.
+ * Provide either node (LND REST) or nwc (Nostr Wallet Connect).
  */
 export interface L402MiddlewareConfig {
-  /** LND node connection */
-  node: LndConfig;
+  /** LND node connection — required if nwc is not provided */
+  node?: LndConfig;
+  /** NWC wallet connection — required if node is not provided */
+  nwc?: NwcConfig;
   /** Price in satoshis for this endpoint */
   price: number;
   /** Human-readable description shown to the client */
