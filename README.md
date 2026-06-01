@@ -10,9 +10,13 @@ npm install l402-js
 
 L402 uses the HTTP `402 Payment Required` status code to create pay-per-request APIs. When a client hits a protected endpoint, the server returns a Lightning invoice. The client pays, gets a cryptographic proof (preimage), and retries with that proof. No accounts, no API keys, no credit cards.
 
-This is how AI agents will pay for services. See [Lightning Labs' announcement](https://lightning.engineering/posts/2026-02-11-ln-agent-tools/) for context.
+This is how AI agents will pay for services.
+
+---
 
 ## Server — Paywall any Express route
+
+### With LND
 
 ```typescript
 import express from 'express';
@@ -20,21 +24,34 @@ import { l402 } from 'l402-js';
 
 const app = express();
 
-const node = {
-  restHost: 'https://127.0.0.1:8082',
-  macaroon: process.env.LND_MACAROON!,
-  skipTlsVerify: true, // dev only
-};
-
-// This route now requires a Lightning payment of 100 sats
-app.get('/api/data', l402({ node, price: 100 }), (req, res) => {
+app.get('/api/data', l402({
+  node: {
+    restHost: 'https://127.0.0.1:8082',
+    macaroon: process.env.LND_MACAROON!,
+    skipTlsVerify: true, // dev only
+  },
+  price: 100,
+}), (req, res) => {
   res.json({ secret: 'You paid 100 sats for this.' });
 });
 
 app.listen(3000);
 ```
 
-That's it. Any request without a valid L402 token gets a `402` response with a Lightning invoice. Pay the invoice, retry with the proof, get the data.
+### With Alby Hub or any NWC wallet
+
+No LND node required. Use any [NWC-compatible wallet](https://nwc.getalby.com) (Alby Hub, Zeus, etc.):
+
+```typescript
+app.get('/api/data', l402({
+  nwc: { connectionString: process.env.NWC_CONNECTION_STRING! },
+  price: 100,
+}), handler);
+```
+
+Any request without a valid L402 token gets a `402` response with a Lightning invoice. Pay the invoice, retry with the proof, get the data.
+
+---
 
 ## Client — Auto-pay L402 invoices
 
@@ -45,7 +62,6 @@ const client = createL402Client({
   node: {
     restHost: 'https://127.0.0.1:8081',
     macaroon: process.env.LND_MACAROON!,
-    skipTlsVerify: true,
   },
   maxAutoPaySats: 1000, // safety limit
 });
@@ -57,24 +73,53 @@ console.log(result.price);     // 100
 console.log(result.preimage);  // 'a1b2c3d4...'
 ```
 
-`client.fetch` works like regular `fetch`, but automatically detects 402 responses, pays the Lightning invoice, and retries with proof. Tokens are cached for reuse.
+`client.fetch` works like regular `fetch` but automatically detects 402 responses, pays the Lightning invoice, and retries with proof. Tokens are cached per URL.
+
+---
+
+## Proxy — Paywall any existing HTTP backend
+
+Zero changes to your backend. Point the proxy at it and every request requires a Lightning payment:
+
+```typescript
+import { createL402Proxy } from 'l402-js';
+
+createL402Proxy({
+  target: 'http://localhost:3000',
+  price: 10,
+  node: { restHost: '...', macaroon: '...' },
+  // or: nwc: { connectionString: '...' }
+}).listen(8402);
+```
+
+Or use the CLI binary — no code required:
+
+```bash
+npx l402-proxy \
+  --target http://localhost:3000 \
+  --price 10 \
+  --lnd-host https://127.0.0.1:8082 \
+  --macaroon <hex>
+```
+
+---
 
 ## Dynamic Pricing
-
-Price requests based on content, user, or complexity:
 
 ```typescript
 app.post('/api/compute', l402({
   node,
-  price: 50, // fallback
+  price: 50,                              // fallback
   priceFn: (req) => req.body.tokens * 2, // 2 sats per token
 }), handler);
 ```
 
+---
+
 ## How It Works
 
 ```
-Client                          Server                         LND Node
+Client                          Server                         Wallet
   |                                |                              |
   |  GET /api/data                 |                              |
   |------------------------------->|                              |
@@ -99,63 +144,64 @@ Client                          Server                         LND Node
   |<-------------------------------|                              |
 ```
 
-The key insight: verification is **cryptographic, not database-driven**. The server checks `sha256(preimage) === payment_hash` — if it matches, payment is mathematically proven. No server-side state. No payment lookups. This is what makes L402 work for distributed systems and AI agents.
+Verification is **cryptographic, not database-driven**. The server checks `sha256(preimage) === payment_hash` — pure math, no payment lookups, no server-side state.
 
-## For AI Agent Developers
-
-L402 is the emerging standard for machine-to-machine payments. This package gives your agents the ability to:
-
-- **Sell services**: Wrap your agent's capabilities in an Express API, paywall it with `l402()`, and any other agent can pay to use it.
-- **Buy services**: Use `createL402Client` to give your agent a wallet that auto-pays for resources it discovers.
-- **Interoperate**: Compatible with Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools) and the broader L402 ecosystem.
+---
 
 ## API Reference
 
-### `l402(config)`
+### `l402(config)` — middleware
 
-Express middleware that paywalls a route.
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `node` | `LndConfig` | One of node/nwc | LND REST API connection |
+| `nwc` | `NwcConfig` | One of node/nwc | NWC wallet connection |
+| `price` | `number` | ✓ | Price in satoshis |
+| `description` | `string` | | Human-readable description shown in 402 |
+| `priceFn` | `(req) => number \| Promise<number>` | | Dynamic pricing (overrides price) |
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `node` | `LndConfig` | LND connection (restHost, macaroon) |
-| `price` | `number` | Price in satoshis |
-| `description` | `string?` | Human-readable description |
-| `priceFn` | `(req) => number` | Dynamic pricing function |
-
-### `createL402Client(config)`
-
-Creates an L402-aware HTTP client.
+### `createL402Client(config)` — auto-paying client
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `node` | `LndConfig` | LND connection for paying invoices |
-| `maxAutoPaySats` | `number?` | Max auto-pay amount (default: 10000) |
+| `maxAutoPaySats` | `number` | Max auto-pay limit in sats (default: 10000) |
 
 Returns `{ fetch, clearCache, cacheSize }`.
+
+### `createL402Proxy(config)` — reverse proxy
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `target` | `string` | Backend URL to proxy to |
+| `node` | `LndConfig` | LND connection |
+| `nwc` | `NwcConfig` | NWC connection |
+| `price` | `number` | Price per request in sats |
+| `description` | `string` | Description shown in 402 challenge |
+| `priceFn` | `(req) => number` | Dynamic pricing |
 
 ### `LndConfig`
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `restHost` | `string` | LND REST API URL |
-| `macaroon` | `string` | Admin macaroon (hex) |
-| `skipTlsVerify` | `boolean?` | Skip TLS verification (dev only) |
+| `restHost` | `string` | LND REST API URL, e.g. `https://127.0.0.1:8082` |
+| `macaroon` | `string` | Admin macaroon in hex |
+| `skipTlsVerify` | `boolean` | Skip TLS verification — dev only |
+
+### `NwcConfig`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `connectionString` | `string` | `nostr+walletconnect://` connection string from your NWC wallet |
+
+---
 
 ## Development
 
 ```bash
-# Clone and install
 git clone https://github.com/smitsyaboi/l402-js
 cd l402-js && npm install
-
-# Use Polar (https://lightningpolar.com) for local Lightning Network
-# Start a network with 2+ LND nodes
-
-# Run the example server
-npm run dev:server
-
-# Run the example client (separate terminal)
-npm run dev:client
+npm test
 ```
 
 ## License
