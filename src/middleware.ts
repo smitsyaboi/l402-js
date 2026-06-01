@@ -12,6 +12,7 @@ import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { L402MiddlewareConfig, LndInvoiceResponse } from './types';
 import { lndFetch } from './lnd-fetch';
+import { nwcCreateInvoice } from './nwc';
 
 /**
  * Create a service macaroon that embeds the payment hash.
@@ -135,7 +136,11 @@ async function createInvoice(
  * ```
  */
 export function l402(config: L402MiddlewareConfig) {
-  const { node, price, description, priceFn } = config;
+  if (!config.node && !config.nwc) {
+    throw new Error('l402: either node (LND) or nwc (Nostr Wallet Connect) must be provided');
+  }
+
+  const { price, description, priceFn } = config;
 
   return async (req: Request, res: Response, next: NextFunction) => {
     // --- Check for existing L402 authorization ---
@@ -182,20 +187,25 @@ export function l402(config: L402MiddlewareConfig) {
 
       const memo = description || `L402 access: ${req.method} ${req.path}`;
 
-      // Create Lightning invoice
-      const invoice = await createInvoice(
-        node.restHost,
-        node.macaroon,
-        finalPrice,
-        memo,
-        node.skipTlsVerify
-      );
+      // Create Lightning invoice via LND or NWC
+      let paymentRequest: string;
+      let paymentHashHex: string;
 
-      // Extract payment hash as hex
-      const paymentHashHex = Buffer.from(
-        invoice.r_hash,
-        'base64'
-      ).toString('hex');
+      if (config.nwc) {
+        const result = await nwcCreateInvoice(config.nwc.connectionString, finalPrice, memo);
+        paymentRequest = result.invoice;
+        paymentHashHex = result.paymentHash;
+      } else {
+        const invoice = await createInvoice(
+          config.node!.restHost,
+          config.node!.macaroon,
+          finalPrice,
+          memo,
+          config.node!.skipTlsVerify,
+        );
+        paymentRequest = invoice.payment_request;
+        paymentHashHex = Buffer.from(invoice.r_hash, 'base64').toString('hex');
+      }
 
       // Create service macaroon embedding the payment hash
       const serviceMacaroon = createServiceMacaroon(
@@ -207,12 +217,12 @@ export function l402(config: L402MiddlewareConfig) {
       res.status(402);
       res.setHeader(
         'WWW-Authenticate',
-        `L402 macaroon="${serviceMacaroon}", invoice="${invoice.payment_request}"`
+        `L402 macaroon="${serviceMacaroon}", invoice="${paymentRequest}"`
       );
       res.json({
         code: 402,
         message: 'Payment Required',
-        invoice: invoice.payment_request,
+        invoice: paymentRequest,
         macaroon: serviceMacaroon,
         price: finalPrice,
         description: memo,

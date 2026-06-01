@@ -21,6 +21,7 @@ export { createL402Client } from './client';
 export { createL402Proxy } from './proxy';
 export type {
   LndConfig,
+  NwcConfig,
   L402MiddlewareConfig,
   L402ClientConfig,
   L402Challenge,
