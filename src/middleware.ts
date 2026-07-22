@@ -146,7 +146,12 @@ export function l402(config: L402MiddlewareConfig) {
     // --- Check for existing L402 authorization ---
     const authHeader = req.headers.authorization;
 
-    if (authHeader && authHeader.toLowerCase().startsWith('l402 ')) {
+    // Accept both the modern `L402` scheme and the legacy `LSAT` scheme
+    // (pre-rename Lightning Service Auth Token). Both prefixes are 5 chars,
+    // so the slice(5) below is valid for either. Tolerating LSAT lets
+    // independent clients that still emit the old scheme interoperate.
+    const scheme = authHeader?.slice(0, 5).toLowerCase();
+    if (authHeader && (scheme === 'l402 ' || scheme === 'lsat ')) {
       const token = authHeader.slice(5);
       const colonIndex = token.lastIndexOf(':');
 

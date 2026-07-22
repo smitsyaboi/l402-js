@@ -224,6 +224,32 @@ describe('l402 middleware', () => {
 
       expect(next).toHaveBeenCalledOnce();
     });
+
+    it('accepts the legacy LSAT scheme', async () => {
+      const macaroon = makeMacaroon(PAYMENT_HASH);
+      const authHeader = `LSAT ${macaroon}:${PREIMAGE_HEX}`;
+
+      const middleware = l402({ node, price: 100 });
+      const req = mockReq({ headers: { authorization: authHeader } });
+      const next = vi.fn();
+
+      await middleware(req, mockRes(), next);
+
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('is case-insensitive for the LSAT prefix', async () => {
+      const macaroon = makeMacaroon(PAYMENT_HASH);
+      const authHeader = `lSaT ${macaroon}:${PREIMAGE_HEX}`;
+
+      const middleware = l402({ node, price: 100 });
+      const req = mockReq({ headers: { authorization: authHeader } });
+      const next = vi.fn();
+
+      await middleware(req, mockRes(), next);
+
+      expect(next).toHaveBeenCalledOnce();
+    });
   });
 
   describe('L402 rejection (invalid auth)', () => {

@@ -2,3 +2,8 @@ node_modules/
 dist/
 .env
 *.log
+
+# Local-only project context (internal roadmap/strategy — not for publication)
+CLAUDE.md
+# Stray build dir from l402-rs after it was extracted to its own repo
+l402-rs/
